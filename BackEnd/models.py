@@ -1,27 +1,16 @@
-from sqlalchemy import Column
-from sqlalchemy import Integer
-from sqlalchemy import DateTime
-
-from datetime import datetime
+from sqlalchemy import Column, Integer, DateTime
+from sqlalchemy.sql import func
 
 from database import Base
-
 
 class LeituraPote(Base):
     __tablename__ = "leituras"
 
-    id = Column(
-        Integer,
-        primary_key=True,
-        index=True
-    )
+    id = Column(Integer, primary_key=True, index=True)
 
-    nivel_racao = Column(
-        Integer,
-        nullable=False
-    )
+    nivel_racao = Column(Integer)
 
     data_hora = Column(
-        DateTime,
-        default=datetime.utcnow
+        DateTime(timezone=True),
+        server_default=func.now()
     )

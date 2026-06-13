@@ -1,16 +1,20 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import serial
+
 import threading
+import serial
 import time
+import os
 
 import models
 from database import SessionLocal, engine
 
-# Cria as tabelas
-# models.Base.metadata.create_all(bind=engine)
 
-app = FastAPI(title="Patinha Smart API")
+# cria tabelas automaticamente
+models.Base.metadata.create_all(bind=engine)
+
+app = FastAPI()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -26,27 +30,9 @@ estado_atual_do_pote = {
 }
 
 
-def salvar_leitura(nivel):
-    db = SessionLocal()
-
-    try:
-        leitura = models.LeituraPote(
-            nivel_racao=nivel
-        )
-
-        db.add(leitura)
-        db.commit()
-
-    except Exception as erro:
-        db.rollback()
-        print(f"Erro ao salvar no banco: {erro}")
-
-    finally:
-        db.close()
-
-
 def ler_cabo_arduino():
     try:
+
         porta_usb = serial.Serial(
             "COM3",
             9600,
@@ -55,7 +41,7 @@ def ler_cabo_arduino():
 
         time.sleep(2)
 
-        print("Arduino conectado")
+        print("Arduino conectado!")
 
         while True:
 
@@ -74,14 +60,34 @@ def ler_cabo_arduino():
 
                     estado_atual_do_pote["racao"] = nivel
 
-                    salvar_leitura(nivel)
+                    try:
+
+                        db = SessionLocal()
+
+                        nova_leitura = models.LeituraPote(
+                            nivel_racao=nivel
+                        )
+
+                        db.add(nova_leitura)
+                        db.commit()
+
+                        db.close()
+
+                    except Exception as erro:
+
+                        print(
+                            f"Erro banco: {erro}"
+                        )
 
     except Exception as erro:
-        print(f"Erro USB: {erro}")
+        print(
+            f"Arduino não conectado: {erro}"
+        )
 
 
-# Só inicia Arduino localmente
-try:
+# só executa Arduino localmente
+if os.getenv("RENDER") is None:
+
     thread = threading.Thread(
         target=ler_cabo_arduino,
         daemon=True
@@ -89,12 +95,10 @@ try:
 
     thread.start()
 
-except:
-    print("Arduino não encontrado")
-
 
 @app.get("/")
 def home():
+
     return {
         "mensagem": "Patinha Smart API Online"
     }
@@ -102,6 +106,7 @@ def home():
 
 @app.get("/status")
 def get_status():
+
     return estado_atual_do_pote
 
 
@@ -110,9 +115,25 @@ def mudar_valor(novo_valor: int):
 
     estado_atual_do_pote["racao"] = novo_valor
 
-    salvar_leitura(novo_valor)
+    try:
+
+        db = SessionLocal()
+
+        nova_leitura = models.LeituraPote(
+            nivel_racao=novo_valor
+        )
+
+        db.add(nova_leitura)
+        db.commit()
+
+        db.close()
+
+    except Exception as erro:
+
+        print(
+            f"Erro banco: {erro}"
+        )
 
     return {
-        "mensagem":
-        f"Nível alterado para {novo_valor}%"
+        "mensagem": f"Nível alterado para {novo_valor}%"
     }
