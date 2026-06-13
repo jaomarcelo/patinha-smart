@@ -1,5 +1,6 @@
 fastapi
 uvicorn
-pyserial
 sqlalchemy
 pymysql
+pyserial
+python-dotenv
