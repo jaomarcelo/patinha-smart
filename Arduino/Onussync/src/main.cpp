@@ -3,9 +3,13 @@
 #include <HX711.h>
 #include <SoftwareSerial.h>
 
-// --- CONFIGURAÇÕES DA BALANÇA ---
-const int LOADCELL_DOUT_PIN = 4;
-const int LOADCELL_SCK_PIN = 5;
+// --- O NOVO MAPA DE INFRAESTRUTURA FÍSICA ---
+LiquidCrystal lcd(7, 6, 5, 4, 3, 2); 
+const int LOADCELL_DOUT_PIN = 8;
+const int LOADCELL_SCK_PIN = 9;
+SoftwareSerial esp8266(10, 11); // RX no 10, TX no 11
+const int BOTAO_PIN = 12;
+
 const float FATOR_CALIBRACAO = 691.43;
 
 // --- CONFIGURAÇÕES DO WI-FI E API ---
@@ -15,11 +19,7 @@ String SERVER = "api.seusite.com.br";
 String ENDPOINT = "/rota-da-sua-api";
 String PORTA = "80"; 
 
-// --- PINOS E COMPONENTES ---
-const int BOTAO_PIN = 6;
-LiquidCrystal lcd(13, 12, 11, 10, 9, 8);
 HX711 scale;
-SoftwareSerial esp8266(2, 3); 
 
 // --- DESIGN DOS ÍCONES CUSTOMIZADOS ---
 byte iconePeso[8] = { B00100, B01110, B01110, B11111, B11111, B11111, B11111, B00000 };
@@ -30,13 +30,13 @@ unsigned long tempoUltimaLeitura = 0;
 const unsigned long INTERVALO_LEITURA = 5000; 
 float pesoAtual = 0.0; 
 
-// NOVO: Configurações do Dashboard de Ração
+// --- CONFIGURAÇÕES DO DASHBOARD DE RAÇÃO ---
 unsigned long tempoUltimoEnvio = 0;
-const unsigned long INTERVALO_ENVIO_HISTORICO = 1800000; // 30 Minutos (em milissegundos)
-const float LIMITE_ALERTA_GRAMAS = 500.0; // Abaixo de 500g, dispara o aviso pro App
-bool alertaEnviado = false; // Trava para não floodar a API de alertas
+const unsigned long INTERVALO_ENVIO_HISTORICO = 1800000; // 30 Minutos
+const float LIMITE_ALERTA_GRAMAS = 500.0; // Abaixo de 500g, dispara alerta
+bool alertaEnviado = false; 
 
-// --- VARIÁVEIS DO SCANNER DE WI-FI NO LCD ---
+// --- VARIÁVEIS DO SCANNER DE WI-FI ---
 bool modoScanner = false;
 bool ultimoEstadoBotao = HIGH; 
 String redesEncontradas[10]; 
@@ -44,7 +44,7 @@ int totalRedes = 0;
 unsigned long tempoUltimaTrocaLCD = 0;
 int indiceRedeLCD = 0;
 
-// --- FUNÇÃO AUXILIAR DE COMANDO ---
+// --- FUNÇÃO AUXILIAR DE COMANDO ESP-01 ---
 String enviarComandoAT(String comando, const int tempoEspera, boolean debug) {
   String resposta = "";
   esp8266.println(comando);
@@ -60,7 +60,6 @@ String enviarComandoAT(String comando, const int tempoEspera, boolean debug) {
 }
 
 // --- FUNÇÃO PARA MONTAR E ENVIAR O PACOTE HTTP ---
-
 void dispararParaAPI(String tipoDeEvento, float pesoDaVez) {
   String json = "{\"tipo\": \"" + tipoDeEvento + "\", \"peso\": " + String(pesoDaVez) + "}";
   String requisicao = "POST " + ENDPOINT + " HTTP/1.1\r\n";
@@ -77,7 +76,7 @@ void dispararParaAPI(String tipoDeEvento, float pesoDaVez) {
   enviarComandoAT("AT+CIPCLOSE", 1000, false);
 }
 
-// --- RADAR ---
+// --- O RADAR ---
 void buscarESalvarRedes() {
   totalRedes = 0; 
   esp8266.println("AT+CWLAP"); 
@@ -105,6 +104,9 @@ void buscarESalvarRedes() {
 }
 
 void setup() {
+  // A Proteção de Inicialização da Tela
+  delay(500);
+  
   Serial.begin(9600);
   esp8266.begin(9600); 
   lcd.begin(16, 2);
@@ -121,22 +123,19 @@ void setup() {
   lcd.write(byte(0)); 
   lcd.setCursor(0, 1);
   lcd.print("    v1.0 IoT    ");
-  delay(3500); 
+  delay(2500); 
 
-  // Carregamento
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("Iniciando...");
-  for(int i = 0; i < 16; i++) {
-    lcd.setCursor(i, 1);
-    lcd.print(".");
-    delay(150); 
-  }
-
-  // Inicia Sensores
+  // Inicia Sensores com Aviso Visual
   scale.begin(LOADCELL_DOUT_PIN, LOADCELL_SCK_PIN);
-  scale.set_scale(FATOR_CALIBRACAO);
-  scale.tare();
+  if (scale.is_ready()) {
+    scale.set_scale(FATOR_CALIBRACAO);
+    lcd.clear();
+    lcd.print("Calibrando Base");
+    lcd.setCursor(0, 1);
+    lcd.print("Nao toque...");
+    delay(2000); // Dá tempo para tirar a mão da tábua
+    scale.tare();
+  }
 
   // Conexão Wi-Fi
   lcd.clear();
@@ -163,7 +162,7 @@ void setup() {
 }
 
 void loop() {
-  // LER O BOTÃO DE MODOS
+  // 1. O LEITOR DO BOTÃO (Alternância de Modo)
   bool leituraBotao = digitalRead(BOTAO_PIN);
   if (leituraBotao == LOW && ultimoEstadoBotao == HIGH) {
     modoScanner = !modoScanner; 
@@ -179,7 +178,7 @@ void loop() {
       
       buscarESalvarRedes(); 
       indiceRedeLCD = 0; 
-      tempoUltimaTrocaLCD = 0; 
+      tempoUltimaTrocaLCD = millis(); 
     } else {
       lcd.clear();
       lcd.setCursor(0, 0);
@@ -194,8 +193,7 @@ void loop() {
 
   unsigned long tempoAtual = millis(); 
 
- 
-  // MODO SCANNER
+  // 2. MODO SCANNER
   if (modoScanner == true) {
     if (totalRedes == 0) {
       lcd.setCursor(0, 0);
@@ -210,43 +208,53 @@ void loop() {
         lcd.write(byte(1)); 
         lcd.print(" Rede " + String(indiceRedeLCD + 1) + "/" + String(totalRedes));
         lcd.setCursor(0, 1);
+        
         String nomeParaMostrar = redesEncontradas[indiceRedeLCD];
         if (nomeParaMostrar.length() > 16) nomeParaMostrar = nomeParaMostrar.substring(0, 16);
         lcd.print(nomeParaMostrar);
+        
         indiceRedeLCD++;
         if (indiceRedeLCD >= totalRedes) indiceRedeLCD = 0; 
       }
     }
   } 
-  // MODO BALANÇA (MONITORAMENTO)
+  // 3. MODO BALANÇA (MONITORAMENTO DA RAÇÃO E API)
   else {
     while (esp8266.available()) esp8266.read(); 
 
-    // TAREFA 1: Atualiza Visor LCD (A cada 5 segundos)
+    // TAREFA A: Atualiza Visor LCD e lê peso
     if (tempoAtual - tempoUltimaLeitura >= INTERVALO_LEITURA) {
       tempoUltimaLeitura = tempoAtual; 
-      pesoAtual = scale.get_units(20);
-      if (pesoAtual < 0.2 && pesoAtual > -0.2) pesoAtual = 0; 
+      
+      if (scale.is_ready()) {
+        pesoAtual = scale.get_units(10); // 10 leituras para maior estabilidade
+        
+        // O NOVO FILTRO DE ZONA MORTA (+/- 10g vira zero)
+        if (pesoAtual >= -10.0 && pesoAtual <= 10.0) {
+            pesoAtual = 0.0;
+        }
 
-      lcd.setCursor(0, 0);
-      lcd.write(byte(0)); 
-      lcd.print(" Monitorando:  ");
-      lcd.setCursor(0, 1);
-      lcd.print("Peso: " + String(pesoAtual, 2) + " g   ");
+        lcd.setCursor(0, 0);
+        lcd.write(byte(0)); 
+        lcd.print(" Monitorando:  ");
+        lcd.setCursor(0, 1);
+        lcd.print("Peso: " + String(pesoAtual, 1) + " g    ");
+      } else {
+        lcd.setCursor(0, 0);
+        lcd.print("Erro de Leitura ");
+      }
     }
 
-    // TAREFA 2: Gatilho de Alerta (O Pote Esvaziou!)
+    // TAREFA B: Gatilho de Alerta Crítico (O Pote Esvaziou!)
     if (pesoAtual <= LIMITE_ALERTA_GRAMAS && alertaEnviado == false) {
-      // Dispara IMEDIATAMENTE furando o cronômetro
       dispararParaAPI("alerta", pesoAtual);
-      alertaEnviado = true; // Tranca a porta para não floodar a API
+      alertaEnviado = true; // Tranca para não sobrecarregar a API
     } 
-    // Se você encheu o pote de novo (com uma margem de folga de 50g), destranca o aviso
     else if (pesoAtual > (LIMITE_ALERTA_GRAMAS + 50.0)) {
-      alertaEnviado = false; 
+      alertaEnviado = false; // Destranca quando enche o pote
     }
 
-    // TAREFA 3: Envio de Histórico Padrão (A cada 30 minutos)
+    // TAREFA C: Envio de Histórico Padrão para Dashboard
     if (tempoAtual - tempoUltimoEnvio >= INTERVALO_ENVIO_HISTORICO) {
       tempoUltimoEnvio = tempoAtual; 
       dispararParaAPI("historico", pesoAtual);
