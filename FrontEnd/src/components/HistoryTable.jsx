@@ -1,4 +1,14 @@
-export default function HistoryTable({ historico }) {
+export default function HistoryTable({ historico = [] }) {
+
+  if (!Array.isArray(historico)) {
+    return (
+      <div className="card">
+        <h2>📊 Histórico</h2>
+        <p>Nenhum dado disponível.</p>
+      </div>
+    );
+  }
+
   return (
     <div className="card">
       <h2>📊 Histórico</h2>
@@ -6,16 +16,16 @@ export default function HistoryTable({ historico }) {
       <table>
         <thead>
           <tr>
-            <th>Horário</th>
+            <th>Data/Hora</th>
             <th>Ração</th>
           </tr>
         </thead>
 
         <tbody>
           {historico.map((item, index) => (
-            <tr key={index}>
-              <td>{item.hora}</td>
-              <td>{item.racao}%</td>
+            <tr key={item.id || index}>
+              <td>{item.data || "-"}</td>
+              <td>{item.racao || 0}%</td>
             </tr>
           ))}
         </tbody>

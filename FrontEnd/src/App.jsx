@@ -35,12 +35,15 @@ function App() {
 
         setStatus(dados);
 
-        const historicoBanco =
-          await getHistorico();
+const historicoBanco =
+  await getHistorico();
 
-        setHistorico(
-          historicoBanco
-        );
+if (Array.isArray(historicoBanco)) {
+  setHistorico(historicoBanco);
+} else {
+  console.log("Resposta do histórico:", historicoBanco);
+  setHistorico([]);
+}
 
       } catch (erro) {
 
