@@ -1,7 +1,4 @@
-import React, {
-  useEffect,
-  useState
-} from "react";
+import React, { useEffect, useState } from "react";
 
 import Header from "./components/Header";
 import StatusCard from "./components/StatusCard";
@@ -9,10 +6,7 @@ import Alerts from "./components/Alerts";
 import HistoryTable from "./components/HistoryTable";
 import Footer from "./components/Footer";
 
-import {
-  getStatus,
-  getHistorico
-} from "./services/api";
+import { getStatus, getHistorico } from "./services/api";
 
 function App() {
 
@@ -21,61 +15,46 @@ function App() {
     wifi: false
   });
 
-  const [historico, setHistorico] =
-    useState([]);
+  const [historico, setHistorico] = useState([]);
 
   useEffect(() => {
 
     async function carregarDados() {
-
       try {
-
-        const dados =
-          await getStatus();
-
+        const dados = await getStatus();
         setStatus(dados);
 
-const historicoBanco =
-  await getHistorico();
+        const historicoBanco = await getHistorico();
 
-if (Array.isArray(historicoBanco)) {
-  setHistorico(historicoBanco);
-} else {
-  console.log("Resposta do histórico:", historicoBanco);
-  setHistorico([]);
-}
-
+        if (Array.isArray(historicoBanco)) {
+          setHistorico(historicoBanco);
+        } else {
+          console.log("Resposta do histórico:", historicoBanco);
+          setHistorico([]);
+        }
       } catch (erro) {
-
         console.log(erro);
-
       }
     }
 
     carregarDados();
 
-    const intervalo =
-      setInterval(
-        carregarDados,
-        5000
-      );
+    // O Polling: busca os dados a cada 5 segundos
+    const intervalo = setInterval(carregarDados, 5000);
 
-    return () =>
-      clearInterval(intervalo);
+    return () => clearInterval(intervalo);
 
   }, []);
 
   return (
-
     <div className="container">
-
       <Header />
-
+      
       <div className="grid">
-
         <StatusCard
           titulo="Ração"
-          valor={`${status.racao}%`}
+          // AQUI ESTÁ A MÁGICA: Convertido para número, 1 casa decimal e com 'g'
+          valor={`${Number(status.racao).toFixed(1)} g`} 
           emoji="🍖"
         />
 
@@ -88,19 +67,14 @@ if (Array.isArray(historicoBanco)) {
           }
           emoji="📶"
         />
-
       </div>
 
       <Alerts racao={status.racao} />
 
-      <HistoryTable
-        historico={historico}
-      />
+      <HistoryTable historico={historico} />
 
       <Footer />
-
     </div>
-
   );
 }
 
