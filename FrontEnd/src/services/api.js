@@ -1,9 +1,22 @@
+const API_URL =
+  "https://patinha-smart.onrender.com";
+
 export async function getStatus() {
-  const response = await fetch("http://localhost:8000/status");
 
-  if (!response.ok) {
-    throw new Error("Erro ao buscar dados");
-  }
+  const resposta =
+    await fetch(
+      `${API_URL}/status`
+    );
 
-  return response.json();
+  return resposta.json();
+}
+
+export async function getHistorico() {
+
+  const resposta =
+    await fetch(
+      `${API_URL}/historico`
+    );
+
+  return resposta.json();
 }
