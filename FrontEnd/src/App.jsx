@@ -9,7 +9,6 @@ import Footer from "./components/Footer";
 import { getStatus, getHistorico } from "./services/api";
 
 function App() {
-
   const [status, setStatus] = useState({
     racao: 0,
     wifi: false
@@ -18,42 +17,37 @@ function App() {
   const [historico, setHistorico] = useState([]);
 
   useEffect(() => {
-
     async function carregarDados() {
       try {
         const dados = await getStatus();
         
-        // TRATAMENTO DO ERRO DE MAPEAMENTO:
-        // Se a API responder com "peso" (do Arduino), guardamos em "racao".
-        // Se responder com "racao", também funciona. Caso contrário, assume 0.
-        const dadosTratados = {
-          racao: dados.peso !== undefined ? dados.peso : (dados.racao !== undefined ? dados.racao : 0),
+        // Comunicação limpa: o backend agora sempre manda "racao" e "wifi"
+        setStatus({
+          racao: dados.racao !== undefined ? dados.racao : 0,
           wifi: dados.wifi !== undefined ? dados.wifi : false
-        };
-
-        setStatus(dadosTratados);
+        });
 
         const historicoBanco = await getHistorico();
 
         if (Array.isArray(historicoBanco)) {
-          setHistorico(historicoBanco);
+          // Inverte o array para mostrar os envios mais recentes no topo da tabela
+          setHistorico(historicoBanco.reverse());
         } else {
-          console.log("Resposta do histórico:", historicoBanco);
           setHistorico([]);
         }
 
       } catch (erro) {
-        console.log("Erro ao carregar os dados da API:", erro);
+        console.error("Erro na comunicação com a API IoT:", erro);
       }
     }
 
+    // Chama a primeira vez imediatamente
     carregarDados();
 
-    // Executa a função de 5 em 5 segundos para atualizar em tempo real
+    // Mantém a sincronização em tempo real a cada 5 segundos
     const intervalo = setInterval(carregarDados, 5000);
 
     return () => clearInterval(intervalo);
-
   }, []);
 
   return (
@@ -62,20 +56,18 @@ function App() {
 
       <div className="grid">
         <StatusCard
-          titulo="Ração"
-          // Exibe o valor formatado com uma casa decimal e a unidade em gramas
+          titulo="Nível da Ração"
           valor={`${Number(status.racao).toFixed(1)} g`}
           emoji="🍖"
         />
 
         <StatusCard
-          titulo="Wi-Fi"
-          valor={status.wifi ? "Conectado" : "Offline"}
-          emoji="📶"
+          titulo="Conexão Wi-Fi"
+          valor={status.wifi ? "Online" : "Offline"}
+          emoji={status.wifi ? "🟢" : "🔴"} 
         />
       </div>
 
-      {/* O componente de alertas recebe o valor corrigido em gramas */}
       <Alerts racao={status.racao} />
 
       <HistoryTable historico={historico} />
