@@ -32,7 +32,7 @@ def ler_cabo_arduino():
     try:
 
         porta_usb = serial.Serial(
-            "COM3",
+            "COM4",
             9600,
             timeout=1
         )
