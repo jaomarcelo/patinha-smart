@@ -17,7 +17,7 @@ String SSID = "motog54";
 String PASSWORD = "caio12345"; 
 String SERVER = "patinha-smart.onrender.com"; 
 String ENDPOINT = "/status";
-String PORTA = "80"; 
+String PORTA = "443"; // Criptografia ativada (HTTPS)
 
 HX711 scale;
 
@@ -59,7 +59,7 @@ String enviarComandoAT(String comando, const int tempoEspera, boolean debug) {
       resposta += c;
     }
   }
-  if (debug) Serial.print(resposta); // Se for true, joga tudo no Monitor Serial
+  if (debug) Serial.print(resposta); // Imprime a resposta do servidor
   return resposta;
 }
 
@@ -75,8 +75,8 @@ void dispararParaAPI(String tipoDeEvento, float pesoDaVez) {
 
   Serial.println("\n>>> DISPARANDO DADOS: " + tipoDeEvento + " (" + String(pesoDaVez, 1) + "g) <<<");
   
-  // MODO X9: Tudo com 'true' para descobrirmos o que o Render está respondendo
-  enviarComandoAT("AT+CIPSTART=\"TCP\",\"" + SERVER + "\"," + PORTA, 4000, true);
+  // Conexão SSL ativada com tempo de handshake ampliado para 6000ms
+  enviarComandoAT("AT+CIPSTART=\"SSL\",\"" + SERVER + "\"," + PORTA, 6000, true);
   enviarComandoAT("AT+CIPSEND=" + String(requisicao.length()), 2000, true);
   enviarComandoAT(requisicao, 5000, true); 
   enviarComandoAT("AT+CIPCLOSE", 1000, true);
@@ -120,7 +120,7 @@ void setup() {
   lcd.createChar(0, iconePeso);
   lcd.createChar(1, iconeWifi);
 
-  // Abertura OnusSync / Patinhas Smart
+  // Abertura Patinhas Smart
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.write(byte(0)); 
