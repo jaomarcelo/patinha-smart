@@ -32,12 +32,12 @@ unsigned long tempoUltimaLeituraLCD = 0;
 const unsigned long INTERVALO_LEITURA_LCD = 1000; // Atualiza a tela a cada 1 seg
 
 unsigned long tempoUltimoEnvioTempoReal = 0;
-const unsigned long INTERVALO_TEMPO_REAL = 5000; // Dispara pra API a cada 5 seg (Sincroniza com o React)
+const unsigned long INTERVALO_TEMPO_REAL = 5000; // Dispara pra API a cada 5 seg
 
 unsigned long tempoUltimoEnvioHistorico = 0;
 const unsigned long INTERVALO_ENVIO_HISTORICO = 1800000; // Dispara histórico a cada 30 min
 
-const float LIMITE_ALERTA_GRAMAS = 200.0; // Abaixo de 200g, dispara alerta de pote vazio
+const float LIMITE_ALERTA_GRAMAS = 200.0; // Abaixo de 200g, dispara alerta
 bool alertaEnviado = false; 
 
 // --- VARIÁVEIS DO SCANNER DE WI-FI ---
@@ -59,13 +59,12 @@ String enviarComandoAT(String comando, const int tempoEspera, boolean debug) {
       resposta += c;
     }
   }
-  if (debug) Serial.print(resposta);
+  if (debug) Serial.print(resposta); // Se for true, joga tudo no Monitor Serial
   return resposta;
 }
 
 // --- FUNÇÃO PARA MONTAR E ENVIAR O PACOTE HTTP ---
 void dispararParaAPI(String tipoDeEvento, float pesoDaVez) {
-  // A MUDANÇA ESTÁ AQUI: "peso" trocado por "racao" para bater com o back-end
   String json = "{\"tipo\": \"" + tipoDeEvento + "\", \"racao\": " + String(pesoDaVez, 1) + "}";
   String requisicao = "POST " + ENDPOINT + " HTTP/1.1\r\n";
   requisicao += "Host: " + SERVER + "\r\n";
@@ -75,10 +74,12 @@ void dispararParaAPI(String tipoDeEvento, float pesoDaVez) {
   requisicao += json;
 
   Serial.println("\n>>> DISPARANDO DADOS: " + tipoDeEvento + " (" + String(pesoDaVez, 1) + "g) <<<");
-  enviarComandoAT("AT+CIPSTART=\"TCP\",\"" + SERVER + "\"," + PORTA, 4000, false);
-  enviarComandoAT("AT+CIPSEND=" + String(requisicao.length()), 2000, false);
-  enviarComandoAT(requisicao, 5000, false);
-  enviarComandoAT("AT+CIPCLOSE", 1000, false);
+  
+  // MODO X9: Tudo com 'true' para descobrirmos o que o Render está respondendo
+  enviarComandoAT("AT+CIPSTART=\"TCP\",\"" + SERVER + "\"," + PORTA, 4000, true);
+  enviarComandoAT("AT+CIPSEND=" + String(requisicao.length()), 2000, true);
+  enviarComandoAT(requisicao, 5000, true); 
+  enviarComandoAT("AT+CIPCLOSE", 1000, true);
 }
 
 // --- O RADAR ---
@@ -109,7 +110,7 @@ void buscarESalvarRedes() {
 }
 
 void setup() {
-  delay(500); // Proteção contra blocos brancos na tela
+  delay(500); 
   
   Serial.begin(9600);
   esp8266.begin(9600); 
@@ -138,7 +139,7 @@ void setup() {
     lcd.setCursor(0, 1);
     lcd.print("Nao toque...");
     delay(2000); 
-    scale.tare(); // Tabela o "zero" com a tábua atual
+    scale.tare(); 
   }
 
   // Conexão Wi-Fi
@@ -151,7 +152,7 @@ void setup() {
 
   enviarComandoAT("AT+CWMODE=1", 2000, true);
   delay(1000); 
-  enviarComandoAT("AT+CWQAP", 1000, true); // Desconecta de redes antigas
+  enviarComandoAT("AT+CWQAP", 1000, true); 
   delay(1000); 
 
   String cmdConexao = "AT+CWJAP=\"" + SSID + "\",\"" + PASSWORD + "\"";
@@ -166,7 +167,7 @@ void setup() {
 }
 
 void loop() {
-  // 1. LEITOR DO BOTÃO (Alternância de Modo)
+  // 1. LEITOR DO BOTÃO
   bool leituraBotao = digitalRead(BOTAO_PIN);
   if (leituraBotao == LOW && ultimoEstadoBotao == HIGH) {
     modoScanner = !modoScanner; 
@@ -223,11 +224,10 @@ void loop() {
     }
   } 
   
-  // 3. MODO BALANÇA (MONITORAMENTO DA RAÇÃO E NUVEM)
+  // 3. MODO BALANÇA (MONITORAMENTO)
   else {
-    while (esp8266.available()) esp8266.read(); // Limpa lixo do Wi-Fi
+    while (esp8266.available()) esp8266.read(); 
 
-    // O CÉREBRO DA BALANÇA: Faz a leitura constante com zona morta
     if (scale.is_ready()) {
       pesoAtual = scale.get_units(5);
       if (pesoAtual >= -10.0 && pesoAtual <= 10.0) {
@@ -235,7 +235,7 @@ void loop() {
       }
     }
 
-    // TAREFA A: Atualiza Visor LCD (A cada 1 segundo)
+    // TAREFA A: Atualiza Visor
     if (tempoAtual - tempoUltimaLeituraLCD >= INTERVALO_LEITURA_LCD) {
       tempoUltimaLeituraLCD = tempoAtual; 
       lcd.setCursor(0, 0);
@@ -245,22 +245,22 @@ void loop() {
       lcd.print("Peso: " + String(pesoAtual, 1) + " g    ");
     }
 
-    // TAREFA B: Gatilho de Alerta Crítico (O Pote Esvaziou!)
+    // TAREFA B: Gatilho de Alerta Crítico
     if (pesoAtual <= LIMITE_ALERTA_GRAMAS && alertaEnviado == false) {
       dispararParaAPI("alerta", pesoAtual);
-      alertaEnviado = true; // Tranca para não sobrecarregar
+      alertaEnviado = true; 
     } 
     else if (pesoAtual > (LIMITE_ALERTA_GRAMAS + 50.0)) {
-      alertaEnviado = false; // Destranca quando encher
+      alertaEnviado = false; 
     }
 
-    // TAREFA C: Envio de Histórico (A cada 30 minutos)
+    // TAREFA C: Envio de Histórico 
     if (tempoAtual - tempoUltimoEnvioHistorico >= INTERVALO_ENVIO_HISTORICO) {
       tempoUltimoEnvioHistorico = tempoAtual; 
       dispararParaAPI("historico", pesoAtual);
     }
 
-    // TAREFA D: Sincronização em "Tempo Real" para o Painel Web (A cada 5 segundos)
+    // TAREFA D: Sincronização em "Tempo Real" 
     if (tempoAtual - tempoUltimoEnvioTempoReal >= INTERVALO_TEMPO_REAL) {
       tempoUltimoEnvioTempoReal = tempoAtual; 
       dispararParaAPI("status_atual", pesoAtual);
