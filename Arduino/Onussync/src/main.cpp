@@ -3,7 +3,7 @@
 #include <HX711.h>
 #include <SoftwareSerial.h>
 
-// --- O NOVO MAPA DE INFRAESTRUTURA FÍSICA ---
+// --- MAPA DE INFRAESTRUTURA FÍSICA ---
 LiquidCrystal lcd(7, 6, 5, 4, 3, 2); 
 const int LOADCELL_DOUT_PIN = 8;
 const int LOADCELL_SCK_PIN = 9;
@@ -15,8 +15,8 @@ const float FATOR_CALIBRACAO = 691.43;
 // --- CONFIGURAÇÕES DO WI-FI E API ---
 String SSID = "motog54"; 
 String PASSWORD = "caio12345"; 
-String SERVER = "api.seusite.com.br"; 
-String ENDPOINT = "/rota-da-sua-api";
+String SERVER = "patinha-smart.onrender.com"; 
+String ENDPOINT = "/status";
 String PORTA = "80"; 
 
 HX711 scale;
@@ -25,15 +25,19 @@ HX711 scale;
 byte iconePeso[8] = { B00100, B01110, B01110, B11111, B11111, B11111, B11111, B00000 };
 byte iconeWifi[8] = { B00000, B11111, B00001, B01110, B00100, B00000, B00100, B00000 };
 
-// --- CONTROLE DE TAREFAS (BALANÇA E HISTÓRICO) ---
-unsigned long tempoUltimaLeitura = 0;
-const unsigned long INTERVALO_LEITURA = 5000; 
+// --- CRONÔMETROS E CONTROLES DE TAREFA ---
 float pesoAtual = 0.0; 
 
-// --- CONFIGURAÇÕES DO DASHBOARD DE RAÇÃO ---
-unsigned long tempoUltimoEnvio = 0;
-const unsigned long INTERVALO_ENVIO_HISTORICO = 1800000; // 30 Minutos
-const float LIMITE_ALERTA_GRAMAS = 500.0; // Abaixo de 500g, dispara alerta
+unsigned long tempoUltimaLeituraLCD = 0;
+const unsigned long INTERVALO_LEITURA_LCD = 1000; // Atualiza a tela a cada 1 seg
+
+unsigned long tempoUltimoEnvioTempoReal = 0;
+const unsigned long INTERVALO_TEMPO_REAL = 5000; // Dispara pra API a cada 5 seg (Sincroniza com o React)
+
+unsigned long tempoUltimoEnvioHistorico = 0;
+const unsigned long INTERVALO_ENVIO_HISTORICO = 1800000; // Dispara histórico a cada 30 min
+
+const float LIMITE_ALERTA_GRAMAS = 200.0; // Abaixo de 200g, dispara alerta de pote vazio
 bool alertaEnviado = false; 
 
 // --- VARIÁVEIS DO SCANNER DE WI-FI ---
@@ -61,7 +65,8 @@ String enviarComandoAT(String comando, const int tempoEspera, boolean debug) {
 
 // --- FUNÇÃO PARA MONTAR E ENVIAR O PACOTE HTTP ---
 void dispararParaAPI(String tipoDeEvento, float pesoDaVez) {
-  String json = "{\"tipo\": \"" + tipoDeEvento + "\", \"peso\": " + String(pesoDaVez) + "}";
+  // A MUDANÇA ESTÁ AQUI: "peso" trocado por "racao" para bater com o back-end
+  String json = "{\"tipo\": \"" + tipoDeEvento + "\", \"racao\": " + String(pesoDaVez, 1) + "}";
   String requisicao = "POST " + ENDPOINT + " HTTP/1.1\r\n";
   requisicao += "Host: " + SERVER + "\r\n";
   requisicao += "Content-Type: application/json\r\n";
@@ -69,7 +74,7 @@ void dispararParaAPI(String tipoDeEvento, float pesoDaVez) {
   requisicao += "Connection: close\r\n\r\n";
   requisicao += json;
 
-  Serial.println("\n>>> DISPARANDO DADOS: " + tipoDeEvento + " <<<");
+  Serial.println("\n>>> DISPARANDO DADOS: " + tipoDeEvento + " (" + String(pesoDaVez, 1) + "g) <<<");
   enviarComandoAT("AT+CIPSTART=\"TCP\",\"" + SERVER + "\"," + PORTA, 4000, false);
   enviarComandoAT("AT+CIPSEND=" + String(requisicao.length()), 2000, false);
   enviarComandoAT(requisicao, 5000, false);
@@ -104,8 +109,7 @@ void buscarESalvarRedes() {
 }
 
 void setup() {
-  // A Proteção de Inicialização da Tela
-  delay(500);
+  delay(500); // Proteção contra blocos brancos na tela
   
   Serial.begin(9600);
   esp8266.begin(9600); 
@@ -115,11 +119,11 @@ void setup() {
   lcd.createChar(0, iconePeso);
   lcd.createChar(1, iconeWifi);
 
-  // Abertura OnusSync
+  // Abertura OnusSync / Patinhas Smart
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.write(byte(0)); 
-  lcd.print("   OnusSync   "); 
+  lcd.print(" Patinhas Smart "); 
   lcd.write(byte(0)); 
   lcd.setCursor(0, 1);
   lcd.print("    v1.0 IoT    ");
@@ -133,8 +137,8 @@ void setup() {
     lcd.print("Calibrando Base");
     lcd.setCursor(0, 1);
     lcd.print("Nao toque...");
-    delay(2000); // Dá tempo para tirar a mão da tábua
-    scale.tare();
+    delay(2000); 
+    scale.tare(); // Tabela o "zero" com a tábua atual
   }
 
   // Conexão Wi-Fi
@@ -147,7 +151,7 @@ void setup() {
 
   enviarComandoAT("AT+CWMODE=1", 2000, true);
   delay(1000); 
-  enviarComandoAT("AT+CWQAP", 1000, true);
+  enviarComandoAT("AT+CWQAP", 1000, true); // Desconecta de redes antigas
   delay(1000); 
 
   String cmdConexao = "AT+CWJAP=\"" + SSID + "\",\"" + PASSWORD + "\"";
@@ -162,7 +166,7 @@ void setup() {
 }
 
 void loop() {
-  // 1. O LEITOR DO BOTÃO (Alternância de Modo)
+  // 1. LEITOR DO BOTÃO (Alternância de Modo)
   bool leituraBotao = digitalRead(BOTAO_PIN);
   if (leituraBotao == LOW && ultimoEstadoBotao == HIGH) {
     modoScanner = !modoScanner; 
@@ -218,46 +222,48 @@ void loop() {
       }
     }
   } 
-  // 3. MODO BALANÇA (MONITORAMENTO DA RAÇÃO E API)
+  
+  // 3. MODO BALANÇA (MONITORAMENTO DA RAÇÃO E NUVEM)
   else {
-    while (esp8266.available()) esp8266.read(); 
+    while (esp8266.available()) esp8266.read(); // Limpa lixo do Wi-Fi
 
-    // TAREFA A: Atualiza Visor LCD e lê peso
-    if (tempoAtual - tempoUltimaLeitura >= INTERVALO_LEITURA) {
-      tempoUltimaLeitura = tempoAtual; 
-      
-      if (scale.is_ready()) {
-        pesoAtual = scale.get_units(10); // 10 leituras para maior estabilidade
-        
-        // O NOVO FILTRO DE ZONA MORTA (+/- 10g vira zero)
-        if (pesoAtual >= -10.0 && pesoAtual <= 10.0) {
-            pesoAtual = 0.0;
-        }
-
-        lcd.setCursor(0, 0);
-        lcd.write(byte(0)); 
-        lcd.print(" Monitorando:  ");
-        lcd.setCursor(0, 1);
-        lcd.print("Peso: " + String(pesoAtual, 1) + " g    ");
-      } else {
-        lcd.setCursor(0, 0);
-        lcd.print("Erro de Leitura ");
+    // O CÉREBRO DA BALANÇA: Faz a leitura constante com zona morta
+    if (scale.is_ready()) {
+      pesoAtual = scale.get_units(5);
+      if (pesoAtual >= -10.0 && pesoAtual <= 10.0) {
+        pesoAtual = 0.0;
       }
+    }
+
+    // TAREFA A: Atualiza Visor LCD (A cada 1 segundo)
+    if (tempoAtual - tempoUltimaLeituraLCD >= INTERVALO_LEITURA_LCD) {
+      tempoUltimaLeituraLCD = tempoAtual; 
+      lcd.setCursor(0, 0);
+      lcd.write(byte(0)); 
+      lcd.print(" Monitorando:  ");
+      lcd.setCursor(0, 1);
+      lcd.print("Peso: " + String(pesoAtual, 1) + " g    ");
     }
 
     // TAREFA B: Gatilho de Alerta Crítico (O Pote Esvaziou!)
     if (pesoAtual <= LIMITE_ALERTA_GRAMAS && alertaEnviado == false) {
       dispararParaAPI("alerta", pesoAtual);
-      alertaEnviado = true; // Tranca para não sobrecarregar a API
+      alertaEnviado = true; // Tranca para não sobrecarregar
     } 
     else if (pesoAtual > (LIMITE_ALERTA_GRAMAS + 50.0)) {
-      alertaEnviado = false; // Destranca quando enche o pote
+      alertaEnviado = false; // Destranca quando encher
     }
 
-    // TAREFA C: Envio de Histórico Padrão para Dashboard
-    if (tempoAtual - tempoUltimoEnvio >= INTERVALO_ENVIO_HISTORICO) {
-      tempoUltimoEnvio = tempoAtual; 
+    // TAREFA C: Envio de Histórico (A cada 30 minutos)
+    if (tempoAtual - tempoUltimoEnvioHistorico >= INTERVALO_ENVIO_HISTORICO) {
+      tempoUltimoEnvioHistorico = tempoAtual; 
       dispararParaAPI("historico", pesoAtual);
+    }
+
+    // TAREFA D: Sincronização em "Tempo Real" para o Painel Web (A cada 5 segundos)
+    if (tempoAtual - tempoUltimoEnvioTempoReal >= INTERVALO_TEMPO_REAL) {
+      tempoUltimoEnvioTempoReal = tempoAtual; 
+      dispararParaAPI("status_atual", pesoAtual);
     }
   }
 }
