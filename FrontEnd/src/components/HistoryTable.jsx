@@ -25,7 +25,7 @@ export default function HistoryTable({ historico = [] }) {
           {historico.map((item, index) => (
             <tr key={item.id || index}>
               <td>{item.data || "-"}</td>
-              <td>{item.racao || 0}%</td>
+              <td>{item.racao || 0}g</td>
             </tr>
           ))}
         </tbody>
