@@ -22,7 +22,16 @@ function App() {
     async function carregarDados() {
       try {
         const dados = await getStatus();
-        setStatus(dados);
+        
+        // TRATAMENTO DO ERRO DE MAPEAMENTO:
+        // Se a API responder com "peso" (do Arduino), guardamos em "racao".
+        // Se responder com "racao", também funciona. Caso contrário, assume 0.
+        const dadosTratados = {
+          racao: dados.peso !== undefined ? dados.peso : (dados.racao !== undefined ? dados.racao : 0),
+          wifi: dados.wifi !== undefined ? dados.wifi : false
+        };
+
+        setStatus(dadosTratados);
 
         const historicoBanco = await getHistorico();
 
@@ -32,14 +41,15 @@ function App() {
           console.log("Resposta do histórico:", historicoBanco);
           setHistorico([]);
         }
+
       } catch (erro) {
-        console.log(erro);
+        console.log("Erro ao carregar os dados da API:", erro);
       }
     }
 
     carregarDados();
 
-    // O Polling: busca os dados a cada 5 segundos
+    // Executa a função de 5 em 5 segundos para atualizar em tempo real
     const intervalo = setInterval(carregarDados, 5000);
 
     return () => clearInterval(intervalo);
@@ -49,26 +59,23 @@ function App() {
   return (
     <div className="container">
       <Header />
-      
+
       <div className="grid">
         <StatusCard
           titulo="Ração"
-          // AQUI ESTÁ A MÁGICA: Convertido para número, 1 casa decimal e com 'g'
-          valor={`${Number(status.racao).toFixed(1)} g`} 
+          // Exibe o valor formatado com uma casa decimal e a unidade em gramas
+          valor={`${Number(status.racao).toFixed(1)} g`}
           emoji="🍖"
         />
 
         <StatusCard
           titulo="Wi-Fi"
-          valor={
-            status.wifi
-              ? "Conectado"
-              : "Offline"
-          }
+          valor={status.wifi ? "Conectado" : "Offline"}
           emoji="📶"
         />
       </div>
 
+      {/* O componente de alertas recebe o valor corrigido em gramas */}
       <Alerts racao={status.racao} />
 
       <HistoryTable historico={historico} />
