@@ -12,12 +12,12 @@ const int BOTAO_PIN = 12;
 
 const float FATOR_CALIBRACAO = 691.43;
 
-// --- CONFIGURAÇÕES DO WI-FI E API ---
+// --- CONFIGURAÇÕES DO WI-FI E API (PONTE THINGSPEAK) ---
 String SSID = "motog54"; 
 String PASSWORD = "caio12345"; 
-String SERVER = "patinha-smart.onrender.com"; 
-String ENDPOINT = "/status";
-String PORTA = "443"; // Criptografia ativada (HTTPS)
+String SERVER = "api.thingspeak.com"; 
+String PORTA = "80"; 
+String API_KEY_THINGHTTP = "GVIC5B68JIFVXZ24"; // A sua chave exata!
 
 HX711 scale;
 
@@ -29,15 +29,16 @@ byte iconeWifi[8] = { B00000, B11111, B00001, B01110, B00100, B00000, B00100, B0
 float pesoAtual = 0.0; 
 
 unsigned long tempoUltimaLeituraLCD = 0;
-const unsigned long INTERVALO_LEITURA_LCD = 1000; // Atualiza a tela a cada 1 seg
+const unsigned long INTERVALO_LEITURA_LCD = 1000; 
 
 unsigned long tempoUltimoEnvioTempoReal = 0;
-const unsigned long INTERVALO_TEMPO_REAL = 5000; // Dispara pra API a cada 5 seg
+// Ajustado para 15 segundos: Limite seguro do ThingSpeak gratuito
+const unsigned long INTERVALO_TEMPO_REAL = 15000; 
 
 unsigned long tempoUltimoEnvioHistorico = 0;
-const unsigned long INTERVALO_ENVIO_HISTORICO = 1800000; // Dispara histórico a cada 30 min
+const unsigned long INTERVALO_ENVIO_HISTORICO = 1800000; 
 
-const float LIMITE_ALERTA_GRAMAS = 200.0; // Abaixo de 200g, dispara alerta
+const float LIMITE_ALERTA_GRAMAS = 200.0; 
 bool alertaEnviado = false; 
 
 // --- VARIÁVEIS DO SCANNER DE WI-FI ---
@@ -59,24 +60,23 @@ String enviarComandoAT(String comando, const int tempoEspera, boolean debug) {
       resposta += c;
     }
   }
-  if (debug) Serial.print(resposta); // Imprime a resposta do servidor
+  if (debug) Serial.print(resposta); 
   return resposta;
 }
 
-// --- FUNÇÃO PARA MONTAR E ENVIAR O PACOTE HTTP ---
+// --- FUNÇÃO PARA MONTAR E ENVIAR O PACOTE (VIA GATEWAY) ---
 void dispararParaAPI(String tipoDeEvento, float pesoDaVez) {
-  String json = "{\"tipo\": \"" + tipoDeEvento + "\", \"racao\": " + String(pesoDaVez, 1) + "}";
-  String requisicao = "POST " + ENDPOINT + " HTTP/1.1\r\n";
-  requisicao += "Host: " + SERVER + "\r\n";
-  requisicao += "Content-Type: application/json\r\n";
-  requisicao += "Content-Length: " + String(json.length()) + "\r\n";
-  requisicao += "Connection: close\r\n\r\n";
-  requisicao += json;
-
-  Serial.println("\n>>> DISPARANDO DADOS: " + tipoDeEvento + " (" + String(pesoDaVez, 1) + "g) <<<");
+  // Monta o link mágico que aciona a sua ponte no ThingSpeak
+  String path = "/apps/thinghttp/send_request?api_key=" + API_KEY_THINGHTTP + "&tipo=" + tipoDeEvento + "&peso=" + String(pesoDaVez, 1);
   
-  // Conexão SSL ativada com tempo de handshake ampliado para 6000ms
-  enviarComandoAT("AT+CIPSTART=\"SSL\",\"" + SERVER + "\"," + PORTA, 6000, true);
+  String requisicao = "GET " + path + " HTTP/1.1\r\n";
+  requisicao += "Host: " + SERVER + "\r\n";
+  requisicao += "Connection: close\r\n\r\n";
+
+  Serial.println("\n>>> DISPARANDO VIA GATEWAY: " + tipoDeEvento + " (" + String(pesoDaVez, 1) + "g) <<<");
+  
+  // Enviando em TCP puro. O ThingSpeak vai receber isso e converter para HTTPS para o seu Render!
+  enviarComandoAT("AT+CIPSTART=\"TCP\",\"" + SERVER + "\"," + PORTA, 4000, true);
   enviarComandoAT("AT+CIPSEND=" + String(requisicao.length()), 2000, true);
   enviarComandoAT(requisicao, 5000, true); 
   enviarComandoAT("AT+CIPCLOSE", 1000, true);
@@ -260,7 +260,7 @@ void loop() {
       dispararParaAPI("historico", pesoAtual);
     }
 
-    // TAREFA D: Sincronização em "Tempo Real" 
+    // TAREFA D: Sincronização em "Tempo Real" para a Ponte
     if (tempoAtual - tempoUltimoEnvioTempoReal >= INTERVALO_TEMPO_REAL) {
       tempoUltimoEnvioTempoReal = tempoAtual; 
       dispararParaAPI("status_atual", pesoAtual);
